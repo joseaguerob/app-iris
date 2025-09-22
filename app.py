@@ -2,16 +2,15 @@ import streamlit as st
 import joblib
 import pickle
 import numpy as np
-
 import psycopg2
+from datetime import datetime
 
-
- USER = "postgres.mxpomiiojlifkraxuggs" #os.getenv("user")
- PASSWORD = "Messivuelvealbarcelonaporfa20"# os.getenv("password")
- HOST = "aws-1-us-east-2.pooler.supabase.com" #os.getenv("host")
- PORT = "6543" #os.getenv("port")
- DBNAME = "postgres" #os.getenv("dbname")
-
+# Credenciales de la base de datos
+USER = "postgres.mxpomiiojlifkraxuggs"
+PASSWORD = "Messivuelvealbarcelonaporfa20"
+HOST = "aws-1-us-east-2.pooler.supabase.com"
+PORT = "6543"
+DBNAME = "postgres"
 
 # Configuración de la página
 st.set_page_config(page_title="Predictor de Iris", page_icon="🌸")
@@ -40,15 +39,15 @@ if model is not None:
     # Inputs
     st.header("Ingresa las características de la flor:")
     
-    sepal_length = st.number_input("Longitud del Sépalo (cm)", min_value=0.0, max_value=10.0, value=5.0, step=0.1)
-    sepal_width = st.number_input("Ancho del Sépalo (cm)", min_value=0.0, max_value=10.0, value=3.0, step=0.1)
-    petal_length = st.number_input("Longitud del Pétalo (cm)", min_value=0.0, max_value=10.0, value=4.0, step=0.1)
-    petal_width = st.number_input("Ancho del Pétalo (cm)", min_value=0.0, max_value=10.0, value=1.0, step=0.1)
+    longitud_sepalo = st.number_input("Longitud del Sépalo (cm)", min_value=0.0, max_value=10.0, value=5.0, step=0.1)
+    ancho_sepalo = st.number_input("Ancho del Sépalo (cm)", min_value=0.0, max_value=10.0, value=3.0, step=0.1)
+    longitud_petalo = st.number_input("Longitud del Pétalo (cm)", min_value=0.0, max_value=10.0, value=4.0, step=0.1)
+    ancho_petalo = st.number_input("Ancho del Pétalo (cm)", min_value=0.0, max_value=10.0, value=1.0, step=0.1)
     
     # Botón de predicción
     if st.button("Predecir y Guardar"):
         # Preparar datos
-        features = np.array([[sepal_length, sepal_width, petal_length, petal_width]])
+        features = np.array([[longitud_sepalo, ancho_sepalo, longitud_petalo, ancho_petalo]])
         
         # Estandarizar
         features_scaled = scaler.transform(features)
@@ -63,13 +62,10 @@ if model is not None:
         
         st.success(f"Especie predicha: **{predicted_species}**")
         st.write(f"Confianza: **{max(probabilities):.1%}**")
-        
-        # Mostrar todas las probabilidades
-        st.write("Probabilidades:")
-        for species, prob in zip(target_names, probabilities):
-            st.write(f"- {species}: {prob:.1%}")
 
-        # --- Guardar la predicción en Supabase ---
+        # Guardar en la base de datos
+        connection = None
+        cursor = None
         try:
             # Conectar a la base de datos
             connection = psycopg2.connect(
@@ -80,17 +76,19 @@ if model is not None:
                 dbname=DBNAME
             )
             
-            # Crear un cursor
+            # Crear un cursor para ejecutar consultas
             cursor = connection.cursor()
             
-            # Definir la consulta SQL para insertar los datos
+            # Consulta SQL para insertar datos, incluyendo la fecha y hora
+            # NOTA: Asegúrate de que tu tabla en Supabase tenga una columna llamada
+            # 'prediction_timestamp' de tipo TIMESTAMP.
             sql_query = """
-            INSERT INTO "Table Iris" (sepal_length, sepal_width, petal_length, petal_width, predicted_species)
-            VALUES (%s, %s, %s, %s, %s);
+            INSERT INTO table_iris (longitud_petalo, longitud_sepalo, ancho_petalo, ancho_sepalo, prediction, prediction_timestamp)
+            VALUES (%s, %s, %s, %s, %s, NOW())
             """
             
-            # Definir los valores a insertar
-            values = (sepal_length, sepal_width, petal_length, petal_width, predicted_species)
+            # Los valores a insertar
+            values = (longitud_petalo, longitud_sepalo, ancho_petalo, ancho_sepalo, predicted_species)
             
             # Ejecutar la consulta
             cursor.execute(sql_query, values)
@@ -98,14 +96,29 @@ if model is not None:
             # Confirmar los cambios
             connection.commit()
             
-            st.success("¡Datos guardados en la tabla 'Table Iris' de Supabase!")
-        
+            st.success("¡Datos guardados en la tabla 'table_iris' de Supabase!")
+            
+            # Bloque único para mostrar la consulta SQL
+            with st.expander("Mostrar información de depuración"):
+                st.write("Consulta SQL ejecutada:")
+                st.code(sql_query.strip())
+                st.write("Valores insertados:")
+                st.write(values)
+                st.write("Hora de registro:")
+                st.write(datetime.now())
+            
         except Exception as e:
             st.error(f"Error al guardar en la base de datos: {e}")
-        
+            st.error("Revisa la consola para más detalles.")
+            
         finally:
-            # Cerrar la conexión y el cursor
-            if 'cursor' in locals() and cursor:
+            # Asegurar que el cursor y la conexión se cierren
+            if cursor is not None:
                 cursor.close()
-            if 'connection' in locals() and connection:
+            if connection is not None:
                 connection.close()
+        
+        # Mostrar todas las probabilidades
+        st.write("Probabilidades:")
+        for species, prob in zip(target_names, probabilities):
+            st.write(f"- {species}: {prob:.1%}")
