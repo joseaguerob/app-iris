@@ -115,7 +115,7 @@ if model is not None:
             
             connection.commit()
             
-            st.success("¡Datos guardados en la tabla 'Table iris' de Supabase!")
+            st.success("Datos guardados en la base de datos")
             
         except Exception as e:
             st.error(f"Error al guardar en la base de datos: {e}")
